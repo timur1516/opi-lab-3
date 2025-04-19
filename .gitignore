@@ -1,0 +1,8 @@
+docs
+build
+lib
+.ninja_log
+build.ninja
+tmp
+build.ninja
+revisions.zip
