@@ -7,18 +7,21 @@ SRC_DIR = 'src'
 BUILD_DIR = 'build'
 LIB_DIR = 'lib'
 DOCS_DIR = 'docs'
-
+TMP_DIR = 'tmp'
+BUILD_SCRIPTS_DIR = 'scripts'
 BUILD_RESOURCES_DIR = 'resources'
+
 MUSIC_FILE = 'music.mp3'
+GIF_FILE = 'tenor.gif'
 REPLACEMENTS_FILE = 'replacements.sed'
 FILES_FOR_ALT_FILE = 'files_for_alt.txt'
 DIFF_CLASSES_FILE = 'classes.txt'
 
-BUILD_SCRIPTS_DIR = 'scripts'
 ALT_SCRIPT = 'alt.sh'
 DIFF_SCRIPT = 'diff.sh'
 HISTORY_SCRIPT = 'history.sh'
 TEAM_SCRIPT = 'team.sh'
+MUSIC_SCRIPT = 'music.sh'
 
 DEPLOY_DIR = '/home/timur1516/documents/dev/wildfly-35.0.1.Final/standalone/deployments'
 RUN_SCRIPT = '/home/timur1516/documents/dev/wildfly-35.0.1.Final/bin/standalone.sh'
@@ -30,6 +33,8 @@ BUILD_EXTENSION = 'war'
 
 REMOTE_SERVER = 'helios'
 REMOTE_SERVER_DIR = '~/'
+
+JAVA_OPTS = '-Xms512m -Xmx2048m'
 
 LIBS_DICT = {
       'classmate-1.5.1.jar': 'https://repo1.maven.org/maven2/com/fasterxml/classmate/1.5.1/classmate-1.5.1.jar',
@@ -89,6 +94,7 @@ if __name__ == '__main__':
     replacements_file = resource_dir / REPLACEMENTS_FILE
     files_for_alt_file = resource_dir / FILES_FOR_ALT_FILE
     music_file = resource_dir / MUSIC_FILE
+    gif_file = resource_dir / GIF_FILE
     diff_classes_file = resource_dir / DIFF_CLASSES_FILE
 
     history_diff_file = 'history_diff.txt'
@@ -98,7 +104,8 @@ if __name__ == '__main__':
     diff_script_file = script_dir / DIFF_SCRIPT
     history_script_file = script_dir / HISTORY_SCRIPT
     team_script_file = script_dir / TEAM_SCRIPT
-    start_script_file = RUN_SCRIPT
+    music_script_file = script_dir / MUSIC_SCRIPT
+    wildfly_script_file = RUN_SCRIPT
 
     # Парсим файлы в директориях
     all_src_files = []
@@ -186,11 +193,6 @@ rule validate_xml
   command = xmllint --noout $in
   description = Validating $in
 
-# Правило для воспроизведения музыки
-rule play_music
-  command = mpg321 $music_file
-  description = Playing music from $music_file
-
 # Правило для выполнения native2ascii
 rule native2ascii
   command = mkdir -p $$(dirname $out) && native2ascii -encoding ASCII $in $out
@@ -226,6 +228,11 @@ rule run_program
   command = java -cp $classpath:$out_dir $main_class
   description = Running $main_class
 
+# Правило для запуска wildfly
+rule run_wildfly
+  command = JAVA_OPTS="$java_opts" $script -DDB_CONFIG_PATH=$db_config_path
+  description = Running WildFly with JAVA_OPTS=$java_opts
+  
 # Цели для загрузки библиотек
 {'\n'.join(f'build {lib_dir / f}: load_lib\n  url = {LIBS_DICT[f]}' for f in LIBS_DICT.keys())}
 build load_libs: phony {' $\n'.join(f'{lib_dir / f}' for f in LIBS_DICT.keys())}
@@ -296,8 +303,9 @@ build clean: phony rm_build rm_native2ascii rm_docs rm_lib
 build xml: phony {' $\n'.join(f'validate_{f}' for f in xml_files)}
 
 # Цели для воспроизведения музыки
-build music: play_music | build
-  music_file = {music_file}
+build music: execute_script | build
+  args = {music_file} {gif_file}
+  script = {music_script_file}
 
 # Цели для native2ascii
 {'\n'.join(f'build {native2ascii_dir / f.name}: native2ascii {f}' for f in property_files)}
@@ -321,7 +329,7 @@ build scp: send_to_server {jar_file} | build
 
 #Цели для выполнения alt
 build alt: execute_script
-  args = {replacements_file} {files_for_alt_file}
+  args = {replacements_file} {files_for_alt_file} {src_dir} {TMP_DIR}
   script = {alt_script_file}
 
 #Цели для выполнения diff
@@ -336,14 +344,17 @@ build history: execute_script
 
 #Цели для выполнения team
 build team: execute_script
-  args = {jar_file} {team_output_zip_file}
+  args = {jar_file} {team_output_zip_file} {BUILD_EXTENSION} {TMP_DIR}
   script = {team_script_file}
 
 #Цели для выполнения env
 build {deploy_dir / jar_file.name}: copy {jar_file}
-build env: execute_script | {deploy_dir / jar_file.name}
-  args = -DDB_CONFIG_PATH={DB_CONFIG_FILE}
-  script = {start_script_file}
+build env: run_wildfly | {deploy_dir / jar_file.name}
+  java_opts = {JAVA_OPTS}
+  db_config_path = {DB_CONFIG_FILE}
+  script = {wildfly_script_file}
+
+default build
 '''
     
     with open('build.ninja', 'w') as f:
